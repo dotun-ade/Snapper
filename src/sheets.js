@@ -15,16 +15,23 @@ const COL = {
   NOTES: 20,            // U
 };
 
+/**
+ * Returns a GoogleAuth client built from individual env-var credentials.
+ * Using GoogleAuth (rather than JWT directly) avoids the OpenSSL 3.x
+ * DECODER::unsupported error that occurs when JWT tries to parse the PEM
+ * key on Node 18+.
+ */
 function getAuthClient() {
-  return new google.auth.JWT(
-    googleConfig.serviceAccountEmail,
-    undefined,
-    googleConfig.privateKey,
-    [
+  return new google.auth.GoogleAuth({
+    credentials: {
+      client_email: googleConfig.serviceAccountEmail,
+      private_key: googleConfig.privateKey,
+    },
+    scopes: [
       'https://www.googleapis.com/auth/spreadsheets.readonly',
       'https://www.googleapis.com/auth/documents',
-    ]
-  );
+    ],
+  });
 }
 
 function getSheetsClient() {

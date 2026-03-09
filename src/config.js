@@ -6,11 +6,20 @@ function requireEnv(name) {
   return val;
 }
 
+function normalizePrivateKey(raw) {
+  // Strip surrounding quotes that some Railway/shell environments add
+  let key = raw.trim().replace(/^["']|["']$/g, '');
+  // Convert literal \n sequences to real newlines (Railway stores keys this way)
+  if (key.includes('\\n')) {
+    key = key.replace(/\\n/g, '\n');
+  }
+  return key;
+}
+
 module.exports = {
   google: {
     serviceAccountEmail: requireEnv('GOOGLE_SERVICE_ACCOUNT_EMAIL'),
-    // Railway stores private keys with \\n — fix at read time
-    privateKey: requireEnv('GOOGLE_PRIVATE_KEY').replace(/\\n/g, '\n'),
+    privateKey: normalizePrivateKey(requireEnv('GOOGLE_PRIVATE_KEY')),
     spreadsheetId: requireEnv('SPREADSHEET_ID'),
     outputDocId: requireEnv('OUTPUT_DOC_ID'),
   },
