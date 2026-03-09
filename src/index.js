@@ -16,6 +16,20 @@ function todayIso() {
 }
 
 /**
+ * Strip markdown symbols from Gemini prose output before writing to Google Docs.
+ * The prompts explicitly ask for plain text, but this is a safety net in case
+ * the model adds formatting anyway.
+ */
+function stripMarkdown(text) {
+  return text
+    .replace(/^#{1,6} /gm, '')           // ## Heading → Heading
+    .replace(/\*\*(.+?)\*\*/g, '$1')     // **bold** → bold
+    .replace(/\*(.+?)\*/g, '$1')         // *italic* → italic
+    .replace(/`(.+?)`/g, '$1')           // `code` → code
+    .replace(/^[ \t]*[*-] /gm, '');      // - item / * item → item (plain)
+}
+
+/**
  * Build a row-index → status snapshot from a full rows array.
  * Stored in state.json so incremental runs can detect status changes.
  */
@@ -86,7 +100,7 @@ async function bootstrap(runDate) {
 
   console.log('Writing to Google Doc...');
   try {
-    await writeBootstrapDocument(prose);
+    await writeBootstrapDocument(stripMarkdown(prose));
   } catch (err) {
     console.error('Docs API write failed — aborting. Do not update state.');
     console.error('Error:', err.message);
@@ -161,7 +175,7 @@ async function incremental(runDate, state) {
 
   console.log('Appending update to Google Doc...');
   try {
-    await appendToDocument(updateNote);
+    await appendToDocument(stripMarkdown(updateNote));
   } catch (err) {
     console.error('Docs API append failed — aborting. State unchanged.');
     console.error('Error:', err.message);

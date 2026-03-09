@@ -15,7 +15,7 @@ Snapper does not make recommendations. Its job is to gather signal accurately an
    Sends the leads to Gemini in structured batches. For each batch, Snapper extracts patterns across status distribution, product demand, geography, lead source, deal size, and data completeness. It always distinguishes between three tiers: all leads, leads that reached Integrating or beyond, and leads that went Live — because that distinction is where the real ICP signal lives.
 
 3. **Writes an ICP analysis document**
-   Synthesises everything into a clear, structured Google Doc covering eight analysis areas. The document is written in prose with supporting counts and percentages, not raw data dumps.
+   Synthesises everything into a clear, structured Google Doc covering eight analysis areas. The document is written in plain prose with supporting counts and percentages — no markdown symbols, no raw data dumps.
 
 4. **Stays current**
    Runs daily. Each day, Snapper reads the full sheet and compares it against a snapshot of the last known state. It picks up two things: leads that are new, and leads whose status changed — for example, a lead that was Engaged six months ago and is now Live. Both feed into the update. If nothing moved, Snapper logs that and goes quiet.
@@ -37,7 +37,7 @@ Snapper reads the full sheet on every run and compares it against a status snaps
 - **New leads** — rows that weren't in the sheet last time
 - **Status changes** — existing leads whose status is different from what was recorded (e.g. Engaged → Live, Integrating → Transacting)
 
-If either list is non-empty, Snapper sends both to Gemini alongside the existing ICP summary and asks for an updated summary plus a short prose note on what shifted. The note is appended to the Google Doc. If nothing changed, Snapper logs that and exits cleanly — no Gemini requests, no writes, no noise.
+If either list is non-empty, Snapper sends both to Gemini alongside the existing ICP summary and asks for an updated summary plus a short prose note on what shifted. The note is appended to the end of the Google Doc — previous content is never overwritten or deleted. If nothing changed, Snapper logs that and exits cleanly — no Gemini requests, no writes, no noise.
 
 **Gemini request budget:** 4 on first run, 1 per day thereafter (or 0 if nothing changed).
 

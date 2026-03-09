@@ -187,7 +187,7 @@ function mergeBatchSummaries(summaries, totalRows) {
  */
 async function synthesize(batchSummaries, totalRows, runDate) {
   const prompt = [
-    `You are writing a full ICP (Ideal Customer Profile) analysis document for AnKorp,`,
+    `You are writing a full ICP (Ideal Customer Profile) analysis document for Anchor,`,
     `a fintech infrastructure company offering banking, payments, and card-issuing APIs.`,
     `Core products: deposit accounts, virtual accounts, sub-accounts, virtual USD cards, payin/payout.`,
     `All products except virtual USD cards are Naira-only.`,
@@ -226,11 +226,13 @@ async function synthesize(batchSummaries, totalRows, runDate) {
     `   Source, Country, TTV, Use Case, Notes), the % of rows where it is populated.`,
     ``,
     `Format rules:`,
-    `- Start with the header: "AnKorp ICP Analysis — ${runDate}"`,
-    `- Write each section with a clear heading`,
+    `- Start with the header: "Anchor ICP Analysis — ${runDate}"`,
+    `- Write each section with a clear plain-text heading (e.g. "1. Geographic Distribution")`,
     `- Use counts and percentages to support every claim`,
     `- Distinguish clearly between three tiers in every section: All Leads / Integrating+ / Live`,
     `- End with a Metadata block: total rows processed: ${totalRows}, run date: ${runDate}, run mode: Bootstrap`,
+    `- Write in plain prose only. Do not use any markdown — no #, ##, **, *, -, backticks, or other symbols.`,
+    `- Do not use bullet points or numbered lists. Write everything as flowing paragraphs.`,
     ``,
     `Batch summaries:`,
     JSON.stringify(batchSummaries, null, 2),
@@ -287,7 +289,7 @@ async function analyzeAllBatches(rows) {
  */
 async function runIncrementalUpdate(existingIcpSummary, newLeads, changedLeads, runDate) {
   const parts = [
-    `You are updating an ICP analysis for AnKorp, a fintech infrastructure company offering`,
+    `You are updating an ICP analysis for Anchor, a fintech infrastructure company offering`,
     `banking, payments, and card-issuing APIs (deposit accounts, virtual accounts, sub-accounts,`,
     `virtual USD cards, payin/payout). All products except virtual USD cards are Naira-only.`,
     ``,
@@ -297,7 +299,8 @@ async function runIncrementalUpdate(existingIcpSummary, newLeads, changedLeads, 
     `Return a JSON object with exactly two fields:`,
     `- "updated_summary": the full updated ICP summary JSON`,
     `- "update_note": a plain-text string starting with "Update — ${runDate}" followed by`,
-    `  2-3 paragraphs describing what changed or was reinforced`,
+    `  2-3 paragraphs in plain prose describing what changed or was reinforced.`,
+    `  No markdown — no #, ##, **, *, -, backticks, or bullet points.`,
     ``,
     `Existing ICP summary:`,
     JSON.stringify(existingIcpSummary, null, 2),
