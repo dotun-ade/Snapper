@@ -18,7 +18,7 @@ Snapper does not make recommendations. Its job is to gather signal accurately an
    Synthesises everything into a clear, structured Google Doc covering eight analysis areas. The document is written in prose with supporting counts and percentages, not raw data dumps.
 
 4. **Stays current**
-   Runs daily. Each day, Snapper checks for new leads added since its last run, updates its internal summary, and appends a short update note to the document describing what changed or was reinforced. If nothing new came in, it logs that and goes quiet.
+   Runs daily. Each day, Snapper reads the full sheet and compares it against a snapshot of the last known state. It picks up two things: leads that are new, and leads whose status changed — for example, a lead that was Engaged six months ago and is now Live. Both feed into the update. If nothing moved, Snapper logs that and goes quiet.
 
 ---
 
@@ -32,9 +32,14 @@ After a successful bootstrap, Snapper saves its current understanding of the ICP
 
 ### Daily runs — Incremental
 
-Snapper only looks at leads added since its last run date. If there are new leads, it sends them to Gemini alongside the existing ICP summary and asks for an updated summary plus a short prose note on what shifted. The note is appended to the Google Doc. If there are no new leads, Snapper logs that and exits cleanly — no Gemini requests, no writes, no noise.
+Snapper reads the full sheet on every run and compares it against a status snapshot stored from the previous run. It looks for two things:
 
-**Gemini request budget:** 4 on first run, 1 per day thereafter (or 0 if no new leads).
+- **New leads** — rows that weren't in the sheet last time
+- **Status changes** — existing leads whose status is different from what was recorded (e.g. Engaged → Live, Integrating → Transacting)
+
+If either list is non-empty, Snapper sends both to Gemini alongside the existing ICP summary and asks for an updated summary plus a short prose note on what shifted. The note is appended to the Google Doc. If nothing changed, Snapper logs that and exits cleanly — no Gemini requests, no writes, no noise.
+
+**Gemini request budget:** 4 on first run, 1 per day thereafter (or 0 if nothing changed).
 
 ---
 
@@ -91,15 +96,22 @@ Snapper stores its run state in `state.json` in the project root:
 
 ```json
 {
-  "runMode": "bootstrap",
+  "runMode": "incremental",
   "lastRunDate": "2026-03-09",
-  "icpSummary": { ... }
+  "icpSummary": { ... },
+  "rowStatuses": {
+    "0": "Live",
+    "1": "Integrating",
+    "2": "Engaged",
+    ...
+  }
 }
 ```
 
 - `runMode` — `"bootstrap"` on first run, `"incremental"` thereafter
-- `lastRunDate` — ISO date of last successful run (used to filter incremental leads)
+- `lastRunDate` — ISO date of the last successful run
 - `icpSummary` — structured JSON summary of the current ICP understanding (passed to Gemini on each incremental run)
+- `rowStatuses` — snapshot of every lead's status at the time of the last run, keyed by row index; used to detect status changes between runs
 
 **State is only written after a fully successful run.** If Sheets, Gemini, or Docs fails at any point, `state.json` is left unchanged so the next run picks up cleanly. Any output that could not be written to the doc is logged to console so it is not lost.
 
@@ -131,6 +143,7 @@ To force a re-bootstrap (e.g. after the CRM structure changes), reset `state.jso
 {
   "runMode": "bootstrap",
   "lastRunDate": null,
-  "icpSummary": null
+  "icpSummary": null,
+  "rowStatuses": null
 }
 ```
