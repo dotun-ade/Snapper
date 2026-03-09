@@ -1,0 +1,20 @@
+{
+  "name": "snapper",
+  "version": "1.0.0",
+  "description": "L1 ICP Analysis Agent for AnKorp CRM — reads Leads sheet, analyses with Gemini, writes to Google Doc",
+  "main": "src/index.js",
+  "type": "commonjs",
+  "dependencies": {
+    "@google/generative-ai": "^0.21.0",
+    "dotenv": "^16.4.7",
+    "googleapis": "^144.0.0"
+  },
+  "scripts": {
+    "start": "node src/index.js",
+    "dev": "NODE_ENV=development node src/index.js",
+    "test": "echo \"No tests configured\" && exit 0"
+  },
+  "keywords": [],
+  "author": "",
+  "license": "ISC"
+}
