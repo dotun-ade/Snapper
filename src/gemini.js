@@ -2,7 +2,17 @@ const { GoogleGenerativeAI } = require('@google/generative-ai');
 const { gemini: geminiConfig } = require('./config');
 
 const genAI = new GoogleGenerativeAI(geminiConfig.apiKey);
-const model = genAI.getGenerativeModel({ model: geminiConfig.modelName });
+
+// Used for the synthesis request — returns prose
+const textModel = genAI.getGenerativeModel({ model: geminiConfig.modelName });
+
+// Used for all structured data requests — forces valid JSON output.
+// responseMimeType: 'application/json' tells Gemini to return clean JSON
+// with no markdown fences and no trailing commas, eliminating all parsing fragility.
+const jsonModel = genAI.getGenerativeModel({
+  model: geminiConfig.modelName,
+  generationConfig: { responseMimeType: 'application/json' },
+});
 
 const BATCH_SIZE = 1000;
 const BATCH_DELAY_MS = 15_000; // 15 seconds between requests (respect 5 req/min limit)
@@ -35,42 +45,8 @@ function rowsToText(rows) {
 }
 
 /**
- * Try to parse a JSON object from raw Gemini response text.
- * Handles markdown fences and loose JSON.
- */
-function parseJson(text) {
-  if (!text) return {};
-  const trimmed = text.trim();
-
-  // Direct parse
-  try {
-    return JSON.parse(trimmed);
-  } catch (_) {}
-
-  // Markdown code fence
-  const fence = trimmed.match(/```(?:json)?([\s\S]*?)```/i);
-  if (fence) {
-    try {
-      return JSON.parse(fence[1].trim());
-    } catch (_) {}
-  }
-
-  // First { to last }
-  const start = trimmed.indexOf('{');
-  const end = trimmed.lastIndexOf('}');
-  if (start !== -1 && end !== -1 && end > start) {
-    try {
-      return JSON.parse(trimmed.slice(start, end + 1));
-    } catch (_) {}
-  }
-
-  console.warn('Could not parse JSON from Gemini response. First 500 chars:', text.slice(0, 500));
-  return {};
-}
-
-/**
  * Send a single batch of rows to Gemini for structured pattern extraction.
- * Returns a JSON summary object.
+ * Uses jsonModel so the response is always valid JSON — no fence stripping needed.
  */
 async function analyzeBatch(rows, batchNumber, totalBatches) {
   const prompt = [
@@ -85,34 +61,36 @@ async function analyzeBatch(rows, batchNumber, totalBatches) {
     `- "integrating_plus": leads with status Integrating or Live`,
     `- "live": leads with status Live`,
     ``,
-    `Extract and return a structured JSON summary of patterns across:`,
-    `- status_distribution: { "StatusValue": count, ... } for every distinct status`,
-    `- product_interest: { primary: { "Product": count }, secondary: { "Product": count } }`,
-    `- industry: { "Industry": count }`,
-    `- country: { "Country": count }`,
-    `- lead_source: { "Inbound": count, "Referral": count, "Events": count, "Outbound": count, "Unknown": count }`,
-    `  (map raw source values to these 5 categories — if unclear, use "Unknown")`,
-    `- ttv_distribution: { populated: count, blank: count, ranges: { "<10k": count, "10k-50k": count, "50k-250k": count, "250k+": count } }`,
-    `  (parse TTV values where possible; treat non-numeric or blank as blank)`,
-    `- use_case_themes: ["theme1", "theme2", ...] (deduplicated list of distinct themes found in UseCase field)`,
-    `- stall_patterns: { stall_statuses: { "Status": count }, correlations: ["observation1", ...] }`,
-    `  (note which statuses have high counts without progression, and any product/country/industry combos that appear repeatedly in stalled leads)`,
-    `- data_completeness: { "fieldName": { populated: count, total: count }, ... }`,
-    `  (for each of: entryDate, status, primaryProduct, secondaryProducts, industry, source, country, ttv, useCase, notes)`,
-    `- tier_breakdown: {`,
-    `    all: { count, top_countries: [...], top_products: [...], top_industries: [...], top_sources: [...] },`,
-    `    integrating_plus: { count, top_countries: [...], top_products: [...], top_industries: [...], top_sources: [...] },`,
-    `    live: { count, top_countries: [...], top_products: [...], top_industries: [...], top_sources: [...] }`,
+    `Return a JSON object with the following structure:`,
+    `{`,
+    `  "status_distribution": { "StatusValue": count },`,
+    `  "product_interest": { "primary": { "Product": count }, "secondary": { "Product": count } },`,
+    `  "industry": { "Industry": count },`,
+    `  "country": { "Country": count },`,
+    `  "lead_source": { "Inbound": count, "Referral": count, "Events": count, "Outbound": count, "Unknown": count },`,
+    `  "ttv_distribution": { "populated": count, "blank": count, "ranges": { "<10k": count, "10k-50k": count, "50k-250k": count, "250k+": count } },`,
+    `  "use_case_themes": ["theme1", "theme2"],`,
+    `  "stall_patterns": { "stall_statuses": { "Status": count }, "correlations": ["observation1"] },`,
+    `  "data_completeness": { "fieldName": { "populated": count, "total": count } },`,
+    `  "tier_breakdown": {`,
+    `    "all": { "count": n, "top_countries": [], "top_products": [], "top_industries": [], "top_sources": [] },`,
+    `    "integrating_plus": { "count": n, "top_countries": [], "top_products": [], "top_industries": [], "top_sources": [] },`,
+    `    "live": { "count": n, "top_countries": [], "top_products": [], "top_industries": [], "top_sources": [] }`,
     `  }`,
+    `}`,
     ``,
-    `Do not write prose. Return only valid JSON. Do not skip or disqualify rows because fields are blank.`,
+    `Rules:`,
+    `- Map raw source values to: Inbound, Referral, Events, Outbound, or Unknown`,
+    `- Parse TTV numerically where possible; treat non-numeric or blank as blank`,
+    `- data_completeness covers: entryDate, status, primaryProduct, secondaryProducts, industry, source, country, ttv, useCase, notes`,
+    `- Do not skip or disqualify rows because fields are blank`,
     ``,
     `Leads data:`,
     rowsToText(rows),
   ].join('\n');
 
-  const result = await model.generateContent(prompt);
-  return parseJson(result.response.text());
+  const result = await jsonModel.generateContent(prompt);
+  return JSON.parse(result.response.text());
 }
 
 /**
@@ -198,7 +176,6 @@ function mergeBatchSummaries(summaries, totalRows) {
     }
   }
 
-  // Deduplicate use_case_themes
   merged.use_case_themes = [...new Set(merged.use_case_themes)];
 
   return merged;
@@ -206,6 +183,7 @@ function mergeBatchSummaries(summaries, totalRows) {
 
 /**
  * Send the synthesis request to Gemini to produce the full ICP analysis prose document.
+ * Uses textModel — this is the one request that returns prose, not JSON.
  */
 async function synthesize(batchSummaries, totalRows, runDate) {
   const prompt = [
@@ -258,7 +236,7 @@ async function synthesize(batchSummaries, totalRows, runDate) {
     JSON.stringify(batchSummaries, null, 2),
   ].join('\n');
 
-  const result = await model.generateContent(prompt);
+  const result = await textModel.generateContent(prompt);
   return result.response.text();
 }
 
@@ -296,9 +274,12 @@ async function analyzeAllBatches(rows) {
 }
 
 /**
- * Run the incremental update:
- * Takes the existing ICP summary JSON + new rows, returns updated JSON and a prose update note.
- * Expects the Gemini response to contain delimited sections.
+ * Run the incremental update.
+ * Uses jsonModel — asks Gemini to return a single JSON object with two fields:
+ *   updated_summary: the merged ICP summary JSON
+ *   update_note:     a plain-text string with the dated prose update
+ *
+ * This eliminates the delimiter-parsing fragility of the previous approach.
  */
 async function runIncrementalUpdate(existingIcpSummary, newRows, runDate) {
   const prompt = [
@@ -307,19 +288,12 @@ async function runIncrementalUpdate(existingIcpSummary, newRows, runDate) {
     `virtual USD cards, payin/payout). All products except virtual USD cards are Naira-only.`,
     ``,
     `The existing summary JSON below represents all historical leads processed before ${runDate}.`,
-    `The new leads were added since the last run. Update the summary JSON to incorporate the new`,
-    `leads, then write a short dated update note (2-3 paragraphs) describing what changed or was`,
-    `reinforced by today's data.`,
+    `The new leads were added since the last run.`,
     ``,
-    `Return your response using EXACTLY this format with no deviation:`,
-    `===UPDATED_JSON_START===`,
-    `{ ... updated JSON ... }`,
-    `===UPDATED_JSON_END===`,
-    `===UPDATE_NOTE_START===`,
-    `Update — ${runDate}`,
-    ``,
-    `{ 2-3 paragraphs here }`,
-    `===UPDATE_NOTE_END===`,
+    `Return a JSON object with exactly two fields:`,
+    `- "updated_summary": the full updated ICP summary JSON, incorporating the new leads`,
+    `- "update_note": a plain-text string starting with "Update — ${runDate}" followed by`,
+    `  2-3 paragraphs describing what the new leads changed or reinforced`,
     ``,
     `Existing ICP summary:`,
     JSON.stringify(existingIcpSummary, null, 2),
@@ -328,22 +302,13 @@ async function runIncrementalUpdate(existingIcpSummary, newRows, runDate) {
     rowsToText(newRows),
   ].join('\n');
 
-  const result = await model.generateContent(prompt);
-  const text = result.response.text();
+  const result = await jsonModel.generateContent(prompt);
+  const parsed = JSON.parse(result.response.text());
 
-  const jsonMatch = text.match(/===UPDATED_JSON_START===([\s\S]*?)===UPDATED_JSON_END===/);
-  const noteMatch = text.match(/===UPDATE_NOTE_START===([\s\S]*?)===UPDATE_NOTE_END===/);
-
-  if (!jsonMatch || !noteMatch) {
-    throw new Error(
-      'Gemini incremental response missing expected delimiters. Raw response:\n' + text.slice(0, 1000)
-    );
-  }
-
-  const updatedIcpSummary = parseJson(jsonMatch[1].trim());
-  const updateNote = noteMatch[1].trim();
-
-  return { updatedIcpSummary, updateNote };
+  return {
+    updatedIcpSummary: parsed.updated_summary,
+    updateNote: parsed.update_note,
+  };
 }
 
 module.exports = { analyzeAllBatches, synthesize, runIncrementalUpdate };
