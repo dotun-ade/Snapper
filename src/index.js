@@ -1,7 +1,7 @@
 require('dotenv').config();
 
 const { readState, writeState } = require('./state');
-const { readAllLeads, readLeadsSince } = require('./sheets');
+const { readAllLeads } = require('./sheets');
 const { writeBootstrapDocument, appendToDocument } = require('./docs');
 const { analyzeAllBatches, synthesize, runIncrementalUpdate } = require('./gemini');
 
@@ -15,8 +15,42 @@ function todayIso() {
   return new Date().toISOString().split('T')[0];
 }
 
+/**
+ * Build a row-index → status snapshot from a full rows array.
+ * Stored in state.json so incremental runs can detect status changes.
+ */
+function buildRowStatuses(rows) {
+  const map = {};
+  rows.forEach((row, idx) => {
+    map[String(idx)] = row.status;
+  });
+  return map;
+}
+
+/**
+ * Diff current rows against the stored status snapshot.
+ * Returns:
+ *   newLeads      — rows at an index not previously seen
+ *   changedLeads  — rows where status differs from the stored value
+ *                   (includes a `previousStatus` field)
+ */
+function diffLeads(currentRows, storedStatuses) {
+  const newLeads = [];
+  const changedLeads = [];
+
+  currentRows.forEach((row, idx) => {
+    const key = String(idx);
+    if (!(key in storedStatuses)) {
+      newLeads.push(row);
+    } else if (row.status !== storedStatuses[key]) {
+      changedLeads.push({ ...row, previousStatus: storedStatuses[key] || 'unknown' });
+    }
+  });
+
+  return { newLeads, changedLeads };
+}
+
 async function bootstrap(runDate) {
-  // 1. Read all leads from the sheet
   console.log('Reading all leads from Leads tab...');
   let rows;
   try {
@@ -27,7 +61,6 @@ async function bootstrap(runDate) {
   }
   console.log(`Read ${rows.length} rows.`);
 
-  // 2. Batch analysis (analyzeAllBatches handles delays between batches)
   let batchSummaries, icpSummary;
   try {
     ({ batchSummaries, icpSummary } = await analyzeAllBatches(rows));
@@ -36,7 +69,6 @@ async function bootstrap(runDate) {
     process.exit(1);
   }
 
-  // 3. Synthesis request (separate so batch summaries can be logged if it fails)
   console.log(`Waiting ${BATCH_DELAY_MS / 1000}s before synthesis request...`);
   await sleep(BATCH_DELAY_MS);
   console.log('Running synthesis...');
@@ -52,7 +84,6 @@ async function bootstrap(runDate) {
     process.exit(1);
   }
 
-  // 4. Write to Google Doc
   console.log('Writing to Google Doc...');
   try {
     await writeBootstrapDocument(prose);
@@ -61,48 +92,65 @@ async function bootstrap(runDate) {
     console.error('Error:', err.message);
     console.log('\n=== FULL ANALYSIS OUTPUT (do not lose this) ===');
     console.log(prose);
-    // Do not update state.json — next run will retry
     process.exit(1);
   }
 
-  // 5. Persist state only after full success
   writeState({
     lastRunDate: runDate,
     icpSummary,
     runMode: 'incremental',
+    rowStatuses: buildRowStatuses(rows),
   });
 
   console.log(`Bootstrap complete. Processed ${rows.length} rows. State saved.`);
 }
 
 async function incremental(runDate, state) {
-  if (!state.lastRunDate) {
-    console.error('Incremental mode but lastRunDate missing from state.json — re-run bootstrap.');
-    process.exit(1);
+  // ── Migration ────────────────────────────────────────────────────────────
+  // First run after this update: state has an icpSummary but no rowStatuses
+  // snapshot. Build the snapshot silently (no Gemini call) so the next run
+  // can diff correctly. The existing analysis doc is untouched.
+  if (!state.rowStatuses) {
+    console.log('Building initial row status snapshot (one-time migration, no Gemini call)...');
+    let allRows;
+    try {
+      allRows = await readAllLeads();
+    } catch (err) {
+      console.error('Sheets API error — aborting:', err.message);
+      process.exit(1);
+    }
+    writeState({ ...state, rowStatuses: buildRowStatuses(allRows) });
+    console.log(`Snapshot built for ${allRows.length} rows. Next run will be fully incremental.`);
+    process.exit(0);
   }
 
-  // 1. Read new leads
-  console.log(`Reading leads with Entry Date >= ${state.lastRunDate}...`);
-  let newRows;
+  // ── Normal incremental run ────────────────────────────────────────────────
+  // Read every row so we can detect both new leads AND status changes on
+  // existing leads (e.g. a lead that was "Engaged" last month and is now "Live").
+  console.log('Reading all leads to detect new rows and status changes...');
+  let allRows;
   try {
-    newRows = await readLeadsSince(state.lastRunDate);
+    allRows = await readAllLeads();
   } catch (err) {
     console.error('Sheets API error — aborting:', err.message);
     process.exit(1);
   }
 
-  if (newRows.length === 0) {
-    console.log(`No new leads since ${state.lastRunDate}. Nothing to do.`);
+  const { newLeads, changedLeads } = diffLeads(allRows, state.rowStatuses);
+
+  if (newLeads.length === 0 && changedLeads.length === 0) {
+    console.log('No new leads or status changes since last run. Nothing to do.');
     process.exit(0);
   }
-  console.log(`Found ${newRows.length} new lead(s).`);
 
-  // 2. Gemini incremental update
+  console.log(`Found ${newLeads.length} new lead(s) and ${changedLeads.length} status change(s).`);
+
   let updatedIcpSummary, updateNote;
   try {
     ({ updatedIcpSummary, updateNote } = await runIncrementalUpdate(
       state.icpSummary,
-      newRows,
+      newLeads,
+      changedLeads,
       runDate
     ));
   } catch (err) {
@@ -111,7 +159,6 @@ async function incremental(runDate, state) {
     process.exit(1);
   }
 
-  // 3. Append update note to Google Doc
   console.log('Appending update to Google Doc...');
   try {
     await appendToDocument(updateNote);
@@ -120,18 +167,20 @@ async function incremental(runDate, state) {
     console.error('Error:', err.message);
     console.log('\n=== UPDATE NOTE (do not lose this) ===');
     console.log(updateNote);
-    // Do not update state.json — next run will retry
     process.exit(1);
   }
 
-  // 4. Persist state only after full success
   writeState({
     lastRunDate: runDate,
     icpSummary: updatedIcpSummary,
     runMode: 'incremental',
+    rowStatuses: buildRowStatuses(allRows),
   });
 
-  console.log(`Incremental update complete. ${newRows.length} new lead(s) processed. State saved.`);
+  console.log(
+    `Incremental update complete. ` +
+    `${newLeads.length} new lead(s), ${changedLeads.length} status change(s). State saved.`
+  );
 }
 
 async function main() {

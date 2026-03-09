@@ -275,34 +275,53 @@ async function analyzeAllBatches(rows) {
 
 /**
  * Run the incremental update.
- * Uses jsonModel — asks Gemini to return a single JSON object with two fields:
- *   updated_summary: the merged ICP summary JSON
- *   update_note:     a plain-text string with the dated prose update
  *
- * This eliminates the delimiter-parsing fragility of the previous approach.
+ * Accepts two lists:
+ *   newLeads     — rows not seen in the previous run (new entries in the CRM)
+ *   changedLeads — existing rows whose status changed since the last snapshot
+ *                  (each has an extra `previousStatus` field)
+ *
+ * Uses jsonModel — returns a JSON object with two fields:
+ *   updated_summary: merged ICP summary JSON
+ *   update_note:     dated prose note on what changed
  */
-async function runIncrementalUpdate(existingIcpSummary, newRows, runDate) {
-  const prompt = [
+async function runIncrementalUpdate(existingIcpSummary, newLeads, changedLeads, runDate) {
+  const parts = [
     `You are updating an ICP analysis for AnKorp, a fintech infrastructure company offering`,
     `banking, payments, and card-issuing APIs (deposit accounts, virtual accounts, sub-accounts,`,
     `virtual USD cards, payin/payout). All products except virtual USD cards are Naira-only.`,
     ``,
-    `The existing summary JSON below represents all historical leads processed before ${runDate}.`,
-    `The new leads were added since the last run.`,
+    `The existing summary JSON represents all leads as of the last run (before ${runDate}).`,
+    `Update it to reflect the changes below, then write a short dated update note.`,
     ``,
     `Return a JSON object with exactly two fields:`,
-    `- "updated_summary": the full updated ICP summary JSON, incorporating the new leads`,
+    `- "updated_summary": the full updated ICP summary JSON`,
     `- "update_note": a plain-text string starting with "Update — ${runDate}" followed by`,
-    `  2-3 paragraphs describing what the new leads changed or reinforced`,
+    `  2-3 paragraphs describing what changed or was reinforced`,
     ``,
     `Existing ICP summary:`,
     JSON.stringify(existingIcpSummary, null, 2),
-    ``,
-    `New leads (${newRows.length} rows):`,
-    rowsToText(newRows),
-  ].join('\n');
+  ];
 
-  const result = await jsonModel.generateContent(prompt);
+  if (newLeads.length > 0) {
+    parts.push(
+      ``,
+      `New leads (${newLeads.length} — entered the CRM since the last run):`,
+      rowsToText(newLeads)
+    );
+  }
+
+  if (changedLeads.length > 0) {
+    parts.push(
+      ``,
+      `Status changes (${changedLeads.length} — existing leads whose status moved since the last run):`,
+      changedLeads
+        .map((row, i) => rowToText(row, i) + `, PreviousStatus=${row.previousStatus}`)
+        .join('\n')
+    );
+  }
+
+  const result = await jsonModel.generateContent(parts.join('\n'));
   const parsed = JSON.parse(result.response.text());
 
   return {

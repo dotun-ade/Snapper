@@ -60,42 +60,6 @@ function parseRow(rawRow) {
 }
 
 /**
- * Parse an entry date string in various formats that may appear in the CRM.
- * Returns a Date object or null.
- */
-function parseEntryDate(dateStr) {
-  if (!dateStr || typeof dateStr !== 'string') return null;
-  const s = dateStr.trim();
-  if (!s) return null;
-
-  // ISO: YYYY-MM-DD or YYYY-MM-DDTHH:MM:SS
-  if (/^\d{4}-\d{2}-\d{2}/.test(s)) {
-    const d = new Date(s);
-    if (!isNaN(d.getTime())) return d;
-  }
-
-  // DD/MM/YYYY (common in Nigerian/UK CRMs)
-  const dmy = s.match(/^(\d{1,2})\/(\d{1,2})\/(\d{4})/);
-  if (dmy) {
-    const d = new Date(`${dmy[3]}-${dmy[2].padStart(2, '0')}-${dmy[1].padStart(2, '0')}`);
-    if (!isNaN(d.getTime())) return d;
-  }
-
-  // MM/DD/YYYY fallback
-  const mdy = s.match(/^(\d{1,2})\/(\d{1,2})\/(\d{4})/);
-  if (mdy) {
-    const d = new Date(`${mdy[3]}-${mdy[1].padStart(2, '0')}-${mdy[2].padStart(2, '0')}`);
-    if (!isNaN(d.getTime())) return d;
-  }
-
-  // General Date parse as last resort
-  const d = new Date(s);
-  if (!isNaN(d.getTime())) return d;
-
-  return null;
-}
-
-/**
  * Read all rows from the Leads tab, skipping the header row.
  * Returns an array of parsed row objects (never skips rows with missing fields).
  */
@@ -111,19 +75,4 @@ async function readAllLeads() {
   return rows.slice(1).map(parseRow);
 }
 
-/**
- * Read rows where Entry Date >= sinceDate (ISO string YYYY-MM-DD).
- * Rows with unparseable or blank Entry Date are excluded from incremental runs.
- */
-async function readLeadsSince(sinceDateStr) {
-  const since = new Date(sinceDateStr);
-  since.setHours(0, 0, 0, 0);
-
-  const all = await readAllLeads();
-  return all.filter((row) => {
-    const d = parseEntryDate(row.entryDate);
-    return d !== null && d >= since;
-  });
-}
-
-module.exports = { readAllLeads, readLeadsSince, getAuthClient };
+module.exports = { readAllLeads, getAuthClient };
