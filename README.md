@@ -6,6 +6,16 @@ Snapper does not make recommendations. Its job is to gather signal accurately an
 
 ---
 
+## Where Snapper fits
+
+Snapper is part of Anchor's Sales agent track, which is working toward a fully autonomous outbound salesperson.
+
+Snapper works alongside **Sobek**, which monitors Gmail for BD-labelled emails, extracts structured intelligence, and keeps the CRM up to date. Between them, Snapper and Sobek cover the two main input streams for sales intelligence: the history of who came in and how they moved, and the live email conversation happening around deals.
+
+Snapper's ICP analysis document is the primary input for the **Deal Intelligence Agent** (in development), which will draw on both Snapper and Sobek output to produce deeper sales analysis.
+
+---
+
 ## What Snapper does
 
 1. **Reads the CRM**
@@ -66,9 +76,23 @@ Every section distinguishes between **All Leads**, **Integrating+**, and **Live*
 | `SPREADSHEET_ID` | Google Sheet ID (from the URL). |
 | `OUTPUT_DOC_ID` | Google Doc ID where Snapper writes its analysis. |
 | `GEMINI_API_KEY` | Gemini API key. |
-| `GEMINI_MODEL` | Optional. Defaults to `gemini-2.5-flash`. |
+| `GEMINI_MODEL` | Optional. Defaults to `gemini-2.5-flash`. Swap here to change model without touching code. |
 
 > **Note:** `GOOGLE_SERVICE_ACCOUNT_JSON` is the recommended approach. If absent, Snapper falls back to `GOOGLE_SERVICE_ACCOUNT_EMAIL` + `GOOGLE_PRIVATE_KEY` individually — but this is less reliable on Railway due to how multi-line env vars are stored.
+
+---
+
+## API rate limits
+
+Snapper runs on Gemini 2.5 Flash. The limits that govern its design:
+
+| Limit | Value |
+|---|---|
+| Requests per minute | 5 |
+| Tokens per minute | 250,000 |
+| Requests per day | 20 |
+
+The 20 requests per day limit is the binding constraint. Snapper is designed around it: bootstrap uses at most 4 requests, every subsequent daily run uses 1 (or 0). Gemini calls are treated as scarce — no redundant requests, no retries on failure.
 
 ---
 
