@@ -17,8 +17,20 @@ const jsonModel = genAI.getGenerativeModel({
 const BATCH_SIZE = 1000;
 const BATCH_DELAY_MS = 15_000; // 15 seconds between requests (respect 5 req/min limit)
 
+const GEMINI_DAILY_BUDGET = 20;
+
 function sleep(ms) {
   return new Promise((resolve) => setTimeout(resolve, ms));
+}
+
+/**
+ * Increment daily call count and log usage against the daily budget.
+ * usage: { count: number } (mutated in place)
+ */
+function recordGeminiCall(usage) {
+  if (!usage || typeof usage.count !== 'number') return;
+  usage.count += 1;
+  console.log(`Gemini calls today: ${usage.count} / ${GEMINI_DAILY_BUDGET}`);
 }
 
 /**
@@ -48,7 +60,7 @@ function rowsToText(rows) {
  * Send a single batch of rows to Gemini for structured pattern extraction.
  * Uses jsonModel so the response is always valid JSON — no fence stripping needed.
  */
-async function analyzeBatch(rows, batchNumber, totalBatches) {
+async function analyzeBatch(rows, batchNumber, totalBatches, usage) {
   const prompt = [
     `You are analysing a batch of CRM leads for AnKorp, a fintech infrastructure company offering banking,`,
     `payments, and card-issuing APIs. Core products: deposit accounts, virtual accounts, sub-accounts,`,
@@ -89,7 +101,10 @@ async function analyzeBatch(rows, batchNumber, totalBatches) {
     rowsToText(rows),
   ].join('\n');
 
+  console.log(`Gemini: batch ${batchNumber}/${totalBatches} — sending request (${rows.length} rows)...`);
   const result = await jsonModel.generateContent(prompt);
+  recordGeminiCall(usage);
+  console.log(`Gemini: batch ${batchNumber}/${totalBatches} — response received.`);
   return JSON.parse(result.response.text());
 }
 
@@ -185,7 +200,7 @@ function mergeBatchSummaries(summaries, totalRows) {
  * Send the synthesis request to Gemini to produce the full ICP analysis prose document.
  * Uses textModel — this is the one request that returns prose, not JSON.
  */
-async function synthesize(batchSummaries, totalRows, runDate) {
+async function synthesize(batchSummaries, totalRows, runDate, usage) {
   const prompt = [
     `You are writing a full ICP (Ideal Customer Profile) analysis document for Anchor,`,
     `a fintech infrastructure company offering banking, payments, and card-issuing APIs.`,
@@ -238,7 +253,10 @@ async function synthesize(batchSummaries, totalRows, runDate) {
     JSON.stringify(batchSummaries, null, 2),
   ].join('\n');
 
+  console.log('Gemini: synthesis — sending request...');
   const result = await textModel.generateContent(prompt);
+  recordGeminiCall(usage);
+  console.log('Gemini: synthesis — response received.');
   return result.response.text();
 }
 
@@ -251,7 +269,7 @@ async function synthesize(batchSummaries, totalRows, runDate) {
  * The caller is responsible for calling synthesize() separately so that
  * batch summaries can be logged if synthesis fails.
  */
-async function analyzeAllBatches(rows) {
+async function analyzeAllBatches(rows, usage) {
   const batches = [];
   for (let i = 0; i < rows.length; i += BATCH_SIZE) {
     batches.push(rows.slice(i, i + BATCH_SIZE));
@@ -266,7 +284,7 @@ async function analyzeAllBatches(rows) {
       await sleep(BATCH_DELAY_MS);
     }
     console.log(`Batch ${i + 1}/${batches.length}: ${batches[i].length} rows`);
-    const summary = await analyzeBatch(batches[i], i + 1, batches.length);
+    const summary = await analyzeBatch(batches[i], i + 1, batches.length, usage);
     batchSummaries.push(summary);
     console.log(`Batch ${i + 1} complete.`);
   }
@@ -287,7 +305,7 @@ async function analyzeAllBatches(rows) {
  *   updated_summary: merged ICP summary JSON
  *   update_note:     dated prose note on what changed
  */
-async function runIncrementalUpdate(existingIcpSummary, newLeads, changedLeads, runDate) {
+async function runIncrementalUpdate(existingIcpSummary, newLeads, changedLeads, runDate, usage) {
   const parts = [
     `You are updating an ICP analysis for Anchor, a fintech infrastructure company offering`,
     `banking, payments, and card-issuing APIs (deposit accounts, virtual accounts, sub-accounts,`,
@@ -324,7 +342,10 @@ async function runIncrementalUpdate(existingIcpSummary, newLeads, changedLeads, 
     );
   }
 
+  console.log(`Gemini: incremental update — sending request (${newLeads.length} new, ${changedLeads.length} changed)...`);
   const result = await jsonModel.generateContent(parts.join('\n'));
+  recordGeminiCall(usage);
+  console.log('Gemini: incremental update — response received.');
   const parsed = JSON.parse(result.response.text());
 
   return {

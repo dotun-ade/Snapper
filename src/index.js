@@ -64,7 +64,7 @@ function diffLeads(currentRows, storedStatuses) {
   return { newLeads, changedLeads };
 }
 
-async function bootstrap(runDate) {
+async function bootstrap(runDate, usage) {
   console.log('Reading all leads from Leads tab...');
   let rows;
   try {
@@ -77,7 +77,7 @@ async function bootstrap(runDate) {
 
   let batchSummaries, icpSummary;
   try {
-    ({ batchSummaries, icpSummary } = await analyzeAllBatches(rows));
+    ({ batchSummaries, icpSummary } = await analyzeAllBatches(rows, usage));
   } catch (err) {
     console.error('Batch analysis failed — aborting:', err.message);
     process.exit(1);
@@ -89,7 +89,7 @@ async function bootstrap(runDate) {
 
   let prose;
   try {
-    prose = await synthesize(batchSummaries, rows.length, runDate);
+    prose = await synthesize(batchSummaries, rows.length, runDate, usage);
   } catch (err) {
     console.error('Synthesis request failed — aborting.');
     console.error('Error:', err.message);
@@ -114,12 +114,14 @@ async function bootstrap(runDate) {
     icpSummary,
     runMode: 'incremental',
     rowStatuses: buildRowStatuses(rows),
+    lastGeminiCallDate: runDate,
+    geminiCallsOnLastRunDate: usage.count,
   });
 
   console.log(`Bootstrap complete. Processed ${rows.length} rows. State saved.`);
 }
 
-async function incremental(runDate, state) {
+async function incremental(runDate, state, usage) {
   // ── Migration ────────────────────────────────────────────────────────────
   // First run after this update: state has an icpSummary but no rowStatuses
   // snapshot. Build the snapshot silently (no Gemini call) so the next run
@@ -165,7 +167,8 @@ async function incremental(runDate, state) {
       state.icpSummary,
       newLeads,
       changedLeads,
-      runDate
+      runDate,
+      usage
     ));
   } catch (err) {
     console.error('Gemini incremental request failed — aborting. State unchanged.');
@@ -189,6 +192,8 @@ async function incremental(runDate, state) {
     icpSummary: updatedIcpSummary,
     runMode: 'incremental',
     rowStatuses: buildRowStatuses(allRows),
+    lastGeminiCallDate: runDate,
+    geminiCallsOnLastRunDate: usage.count,
   });
 
   console.log(
@@ -201,12 +206,21 @@ async function main() {
   const runDate = todayIso();
   const state = readState();
 
-  console.log(`Snapper starting — ${runDate} — mode: ${state.runMode}`);
+  // Track Gemini API calls per calendar day (budget 20/day). Persisted in state
+  // so multiple runs the same day (e.g. retries) share the same count.
+  const usage = {
+    count:
+      state.lastGeminiCallDate === runDate ? (state.geminiCallsOnLastRunDate || 0) : 0,
+  };
+  console.log(
+    `Snapper starting — ${runDate} — mode: ${state.runMode}. ` +
+      `Gemini calls today: ${usage.count} / 20`
+  );
 
   if (state.runMode === 'bootstrap') {
-    await bootstrap(runDate);
+    await bootstrap(runDate, usage);
   } else {
-    await incremental(runDate, state);
+    await incremental(runDate, state, usage);
   }
 }
 
