@@ -1,7 +1,10 @@
 const fs = require('fs');
 const path = require('path');
 
-const STATE_FILE = path.join(process.cwd(), 'state.json');
+// Allow the state directory to be configured (e.g. to point at a Railway volume).
+// Falls back to the current working directory so local behaviour is unchanged.
+const STATE_DIR = process.env.STATE_DIR || process.cwd();
+const STATE_FILE = path.join(STATE_DIR, 'state.json');
 
 const DEFAULT_STATE = {
   runMode: 'bootstrap',
@@ -22,6 +25,8 @@ function readState() {
 }
 
 function writeState(state) {
+  // Ensure the state directory exists before writing (important for fresh volumes).
+  fs.mkdirSync(STATE_DIR, { recursive: true });
   fs.writeFileSync(STATE_FILE, JSON.stringify(state, null, 2), 'utf8');
 }
 
