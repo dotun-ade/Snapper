@@ -7,9 +7,9 @@ const STATE_DIR = process.env.STATE_DIR || process.cwd();
 const STATE_FILE = path.join(STATE_DIR, 'state.json');
 
 const DEFAULT_STATE = {
-  runMode: 'bootstrap',
   lastRunDate: null,
-  icpSummary: null,
+  lastGeminiCallDate: null,
+  geminiCallsOnLastRunDate: 0,
 };
 
 function readState() {
@@ -19,7 +19,7 @@ function readState() {
   try {
     return JSON.parse(fs.readFileSync(STATE_FILE, 'utf8'));
   } catch (err) {
-    console.warn('Could not parse state.json, using default bootstrap state:', err.message);
+    console.warn('Could not parse state.json, using default state:', err.message);
     return { ...DEFAULT_STATE };
   }
 }
