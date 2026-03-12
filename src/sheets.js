@@ -3,6 +3,7 @@ const { google: googleConfig } = require('./config');
 
 // Column indices (0-based) for the Leads tab
 const COL = {
+  BUSINESS_NAME: 2,      // C
   ENTRY_DATE: 4,        // E
   STATUS: 7,            // H
   PRIMARY_PRODUCT: 8,   // I
@@ -71,8 +72,11 @@ async function readAllLeads() {
   });
 
   const rows = response.data.values || [];
-  // Row 0 is the header; skip it
-  return rows.slice(1).map(parseRow);
+  // Row 0 is the header; skip it. Also skip any row without a Business Name,
+  // since S/N is just a tracking counter and empty-name rows are not real leads.
+  const dataRows = rows.slice(1);
+  const leadRows = dataRows.filter((rawRow) => get(rawRow, COL.BUSINESS_NAME) !== '');
+  return leadRows.map(parseRow);
 }
 
 module.exports = { readAllLeads, getAuthClient };
