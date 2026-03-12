@@ -41,7 +41,8 @@ Every section distinguishes between **All Leads**, **Integrating+**, and **Live*
 5. **TTV distribution** — spread of estimated deal value across tiers
 6. **Use case patterns** — themes among leads that converted vs those that did not
 7. **Stall and drop-off patterns** — where leads go quiet and what they have in common
-8. **Data quality summary** — field-by-field population rates across the full dataset
+8. **Ideal customer profiles** — concrete ICP archetypes (label, country/region, industry, tier, product mix, deal size band, use-case themes, why they’re a strong/weak fit), with as many distinct profiles as the data can confidently support
+9. **Data quality summary** — field-by-field population rates across the full dataset
 
 ---
 
