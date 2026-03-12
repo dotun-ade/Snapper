@@ -8,11 +8,7 @@ Snapper does not make recommendations. Its job is to gather signal accurately an
 
 ## Where Snapper fits
 
-Snapper is part of Anchor's Sales agent track, which is working toward a fully autonomous outbound salesperson.
-
-Snapper works alongside **Sobek**, which monitors Gmail for BD-labelled emails, extracts structured intelligence, and keeps the CRM up to date. Between them, Snapper and Sobek cover the two main input streams for sales intelligence: the history of who came in and how they moved, and the live email conversation happening around deals.
-
-Snapper's ICP analysis document is the primary input for the **Deal Intelligence Agent** (in development), which will draw on both Snapper and Sobek output to produce deeper sales analysis.
+Snapper works alongside **Sobek**, which monitors Gmail for BD-labelled emails, extracts structured intelligence, and keeps the CRM up to date. Between them, Snapper and Sobek cover the two main input streams for sales intelligence: the history of who came in and how they moved, and the live email conversation happening around deals. Together they form the intelligence base that powers Anchor's outbound sales capability.
 
 ---
 
