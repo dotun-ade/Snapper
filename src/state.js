@@ -8,8 +8,8 @@ const STATE_FILE = path.join(STATE_DIR, 'state.json');
 
 const DEFAULT_STATE = {
   lastRunDate: null,
-  lastGeminiCallDate: null,
-  geminiCallsOnLastRunDate: 0,
+  lastGeminiDay: null,
+  geminiCallsOnLastGeminiDay: 0,
 };
 
 function readState() {

@@ -100,14 +100,14 @@ Snapper stores minimal run state in `state.json` (project root, or `STATE_DIR` i
 ```json
 {
   "lastRunDate": "2026-03-11",
-  "lastGeminiCallDate": "2026-03-11",
-  "geminiCallsOnLastRunDate": 10
+  "lastGeminiDay": "2026-03-11",
+  "geminiCallsOnLastGeminiDay": 10
 }
 ```
 
 - `lastRunDate` — ISO date of the last successful run
-- `lastGeminiCallDate` — date used for daily call counting
-- `geminiCallsOnLastRunDate` — number of Gemini API calls made on that date (so the second run of the day sees the correct count for "X / 20" logging)
+- `lastGeminiDay` — label for the last Gemini \"day\" used for call counting (each day runs 07:00–07:00 UTC)
+- `geminiCallsOnLastGeminiDay` — number of Gemini API calls made in that 07:00–07:00 UTC window (so the second run of the day sees the correct count for \"X / 20\" logging)
 
 **State is only written after a fully successful run.** If Sheets, Gemini, or Docs fails at any point, `state.json` is left unchanged. Any output that could not be written to the doc is logged to console so it is not lost.
 

@@ -16,6 +16,28 @@ function todayIso() {
 }
 
 /**
+ * Return the \"Gemini billing day\" label, where a day runs from 07:00–07:00 UTC.
+ * Any time before 07:00 UTC is counted as the previous day.
+ */
+function geminiDayLabel() {
+  const now = new Date();
+  const utcYear = now.getUTCFullYear();
+  const utcMonth = now.getUTCMonth();
+  const utcDate = now.getUTCDate();
+  const utcHour = now.getUTCHours();
+
+  // Start from midnight UTC for \"today\"
+  let dayStart = new Date(Date.UTC(utcYear, utcMonth, utcDate));
+
+  // If we're before 07:00 UTC, treat this as belonging to the previous day
+  if (utcHour < 7) {
+    dayStart = new Date(dayStart.getTime() - 24 * 60 * 60 * 1000);
+  }
+
+  return dayStart.toISOString().split('T')[0];
+}
+
+/**
  * Strip markdown symbols from Gemini prose output before writing to Google Docs.
  * The prompts explicitly ask for plain text, but this is a safety net in case
  * the model adds formatting anyway.
@@ -79,30 +101,37 @@ async function fullRun(runDate, usage) {
     process.exit(1);
   }
 
-  writeState({
-    lastRunDate: runDate,
-    lastGeminiCallDate: runDate,
-    geminiCallsOnLastRunDate: usage.count,
-  });
-
-  console.log(`Full run complete. Processed ${rows.length} rows. State saved.`);
+  console.log(`Full run complete. Processed ${rows.length} rows.`);
 }
 
 async function main() {
   const runDate = todayIso();
   const state = readState();
+  const geminiDay = geminiDayLabel();
 
-  // Track Gemini API calls per calendar day (budget 20). Persisted so both
-  // daily runs (e.g. 5am and 6pm UTC) share the same count.
+  // Track Gemini API calls per Gemini day (07:00–07:00 UTC, budget 20). Persisted
+  // so both daily runs (e.g. 5am and 6pm UTC) share the same count correctly.
   const usage = {
     count:
-      state.lastGeminiCallDate === runDate ? (state.geminiCallsOnLastRunDate || 0) : 0,
+      state.lastGeminiDay === geminiDay
+        ? (state.geminiCallsOnLastGeminiDay || 0)
+        : 0,
   };
   console.log(
-    `Snapper starting — ${runDate} — full run. Gemini calls today: ${usage.count} / 20`
+    `Snapper starting — ${runDate} — full run. ` +
+      `Gemini calls this 07:00–07:00 UTC day (${geminiDay}): ${usage.count} / 20`
   );
 
   await fullRun(runDate, usage);
+
+  // Persist the final Gemini day + count after a successful run.
+  const finalState = readState();
+  writeState({
+    ...finalState,
+    lastRunDate: runDate,
+    lastGeminiDay: geminiDay,
+    geminiCallsOnLastGeminiDay: usage.count,
+  });
 }
 
 main().catch((err) => {
